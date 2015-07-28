@@ -328,6 +328,18 @@ var (
 		},
 	}
 
+	// Video file information.
+	keyVideo = &keyType{
+		"video",
+		[]part{
+			{"wholeRef", typeBlobRef},
+		},
+		[]part{
+			{"width", typeStr},
+			{"height", typeStr},
+		},
+	}
+
 	// child of a directory
 	keyStaticDirChild = &keyType{
 		"dirchild",

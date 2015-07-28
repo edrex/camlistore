@@ -40,6 +40,7 @@ import (
 	"camlistore.org/pkg/magic"
 	"camlistore.org/pkg/media"
 	"camlistore.org/pkg/schema"
+	"camlistore.org/pkg/video/ffmpeg"
 	"github.com/hjfreyer/taglib-go/taglib"
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/rwcarlsen/goexif/tiff"
@@ -405,10 +406,17 @@ func (ix *Index) populateFile(fetcher blob.Fetcher, b *schema.Blob, mm *mutation
 
 	sha1 := sha1.New()
 	var copyDest io.Writer = sha1
-	var imageBuf *keepFirstN // or nil
-	if strings.HasPrefix(mime, "image/") {
-		imageBuf = &keepFirstN{N: 512 << 10}
-		copyDest = io.MultiWriter(copyDest, imageBuf)
+	var isImage, isVideo bool
+	var mediaBuf *keepFirstN // or nil
+	switch {
+	case strings.HasPrefix(mime, "image/"):
+		isImage = true
+	case magic.IsVideo(mime, b.FileName()):
+		isVideo = true
+	}
+	if isImage || isVideo {
+		mediaBuf = &keepFirstN{N: 512 << 10}
+		copyDest = io.MultiWriter(copyDest, mediaBuf)
 	}
 	size, err := io.Copy(copyDest, mr)
 	if err != nil {
@@ -416,13 +424,14 @@ func (ix *Index) populateFile(fetcher blob.Fetcher, b *schema.Blob, mm *mutation
 	}
 	wholeRef := blob.RefFromHash(sha1)
 
-	if imageBuf != nil {
+	switch {
+	case isImage:
 		var conf images.Config
 		decodeConfig := func(r filePrefixReader) error {
 			conf, err = images.DecodeConfig(r)
 			return err
 		}
-		if err := readPrefixOrFile(imageBuf.Bytes, fetcher, b, decodeConfig); err == nil {
+		if err := readPrefixOrFile(mediaBuf.Bytes, fetcher, b, decodeConfig); err == nil {
 			mm.Set(keyImageSize.Key(blobRef), keyImageSize.Val(fmt.Sprint(conf.Width), fmt.Sprint(conf.Height)))
 		}
 
@@ -431,7 +440,7 @@ func (ix *Index) populateFile(fetcher blob.Fetcher, b *schema.Blob, mm *mutation
 			ft, err = schema.FileTime(r)
 			return err
 		}
-		if err = readPrefixOrFile(imageBuf.Bytes, fetcher, b, fileTime); err == nil {
+		if err = readPrefixOrFile(mediaBuf.Bytes, fetcher, b, fileTime); err == nil {
 			times = append(times, ft)
 		}
 		if exifDebug {
@@ -442,10 +451,17 @@ func (ix *Index) populateFile(fetcher blob.Fetcher, b *schema.Blob, mm *mutation
 		indexEXIFData := func(r filePrefixReader) error {
 			return indexEXIF(wholeRef, r, mm)
 		}
-		if err = readPrefixOrFile(imageBuf.Bytes, fetcher, b, indexEXIFData); err != nil {
+		if err = readPrefixOrFile(mediaBuf.Bytes, fetcher, b, indexEXIFData); err != nil {
 			if exifDebug {
 				log.Printf("error parsing EXIF: %v", err)
 			}
+		}
+	case isVideo:
+		if err := readPrefixOrFile(mediaBuf.Bytes, fetcher, b,
+			func(r filePrefixReader) error {
+				return indexVideo(r, wholeRef, mm)
+			}); err != nil {
+			log.Printf("error indexing video: %v", err)
 		}
 	}
 
@@ -591,6 +607,15 @@ func indexEXIF(wholeRef blob.Ref, r io.Reader, mm *mutationMap) (err error) {
 	} else if !exif.IsTagNotPresentError(err) {
 		log.Printf("Invalid EXIF GPS data: %v", err)
 	}
+	return nil
+}
+
+func indexVideo(r io.Reader, wholeRef blob.Ref, mm *mutationMap) error {
+	vi, err := ffmpeg.VideoInfo(r)
+	if err != nil {
+		return err
+	}
+	mm.Set(keyVideo.Key(wholeRef), keyVideo.Val(fmt.Sprint(vi.Width), fmt.Sprint(vi.Height)))
 	return nil
 }
 

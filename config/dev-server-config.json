@@ -59,6 +59,10 @@
 				"scaledImage": {
 					"type": "kv",
 					"file": ["_env", "${CAMLI_ROOT_CACHE}/thumbnails.kv", ""]
+				},
+				"videoThumbnail": {
+					"timeout": 6000,
+					"maxProcs": 8
 				}
 			}
 		},

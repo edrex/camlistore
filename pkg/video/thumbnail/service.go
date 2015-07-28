@@ -39,8 +39,7 @@ import (
 
 	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/netutil"
-	"go4.org/jsonconfig"
-
+	"camlistore.org/pkg/video/ffmpeg"
 	"go4.org/syncutil"
 )
 
@@ -49,48 +48,48 @@ type Service struct {
 	thumbnailer Thumbnailer
 	// Timeout is the maximum duration for the thumbnailing subprocess execution.
 	timeout time.Duration
-	gate    *syncutil.Gate // of subprocesses.
+	gate    *syncutil.Gate // limits the number of concurrent thumbnailer subprocesses.
 }
 
-// ServiceFromConfig builds a new Service from configuration.
-// Example expected configuration object (all keys are optional) :
-// {
-//   // command defaults to FFmpegThumbnailer and $uri is replaced by
-//   // the real value at runtime.
-//   "command": ["/opt/local/bin/ffmpeg", "-i", "$uri", "pipe:1"],
-//   // Maximun number of milliseconds for running the thumbnailing subprocess.
-//   // A zero or negative timeout means no timeout.
-//   "timeout": 2000,
-//   // Maximum number of thumbnailing subprocess running at same time.
-//   // A zero or negative maxProcs means no limit.
-//   "maxProcs": 5
-// }
-func ServiceFromConfig(conf jsonconfig.Obj) (*Service, error) {
-	th := thumbnailerFromConfig(conf)
-	timeout := conf.OptionalInt("timeout", 5000)
-	maxProc := conf.OptionalInt("maxProcs", 5)
+// Config holds the paramter for a thumbnailer service.
+type Config struct {
+	// Command is the full command and args used as the thumbnailer,
+	// including the "$uri" placeholder which is replaced at runtime with the
+	// video URI. It defaults to DefaultCmd (ffmpeg).
+	Command []string `json:"command,omitempty"`
+	// Timeout is the duration we allow for the process from Command to finish.
+	// Negative means no timeout. It defaults to 2 seconds.
+	Timeout time.Duration `json:"timeout,omitempty"`
+	// MaxProcs is the maximum number of thumbnailing processes running at same time.
+	// Zero or negative means no limit.
+	MaxProcs int `json:"maxProcs,omitempty"`
+}
 
-	err := conf.Validate()
-	if err != nil {
-		return nil, err
+// NewService builds a new Service. If no conf.Command and ffmpeg is not installed,
+// it returns ffmpeg.ErrFFmpegNotFound.
+func NewService(conf *Config) (*Service, error) {
+	var th Thumbnailer
+	if len(conf.Command) < 1 {
+		if !ffmpeg.Available() {
+			return nil, ffmpeg.ErrFFmpegNotFound
+		}
+		th = FFmpeg{}
+	} else {
+		th = &thumbnailer{prog: conf.Command[0], args: conf.Command[1:]}
 	}
-
-	return NewService(th, time.Millisecond*time.Duration(timeout), maxProc), nil
-}
-
-// NewService builds a new Service. Zero timeout or maxProcs means no limit.
-func NewService(th Thumbnailer, timeout time.Duration, maxProcs int) *Service {
-
 	var g *syncutil.Gate
-	if maxProcs > 0 {
-		g = syncutil.NewGate(maxProcs)
+	if conf.MaxProcs > 0 {
+		g = syncutil.NewGate(conf.MaxProcs)
+	}
+	if conf.Timeout == 0 {
+		conf.Timeout = 2 * time.Second
 	}
 
 	return &Service{
 		thumbnailer: th,
-		timeout:     timeout,
+		timeout:     conf.Timeout,
 		gate:        g,
-	}
+	}, nil
 }
 
 var errTimeout = errors.New("timeout.")
@@ -142,6 +141,7 @@ func (s *Service) Generate(videoRef blob.Ref, w io.Writer, src blob.Fetcher) err
 	servErrc := make(chan error, 1)
 	go func() {
 		servErrc <- http.Serve(ln, createVideothumbnailHandler(videoRef, src))
+		// N.B: not leaking because closing ln makes Serve return.
 	}()
 
 	select {
@@ -155,7 +155,7 @@ func (s *Service) Generate(videoRef blob.Ref, w io.Writer, src blob.Fetcher) err
 }
 
 func (s *Service) timer() <-chan time.Time {
-	if s.timeout <= 0 {
+	if s.timeout < 0 {
 		return make(<-chan time.Time)
 	}
 	return time.After(s.timeout)

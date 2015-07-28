@@ -215,6 +215,11 @@ func (b *lowBuilder) addUIConfig() {
 	if thumbCache != nil {
 		args["scaledImage"] = thumbCache
 	}
+	// TODO(mpl): allow high-level configuration, probably.
+	args["videoThumbnail"] = map[string]interface{}{
+		"timeout":  float64(6000),
+		"maxProcs": float64(8),
+	}
 	b.addPrefix("/ui/", "ui", args)
 }
 

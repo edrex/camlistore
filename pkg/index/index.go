@@ -1240,6 +1240,48 @@ func (x *Index) GetImageInfo(ctx context.Context, fileRef blob.Ref) (camtypes.Im
 	return ii, nil
 }
 
+// v is "width|height"
+func kvVideoInfo(v []byte) (vi camtypes.VideoInfo, ok bool) {
+	pipei := bytes.IndexByte(v, '|')
+	if pipei < 0 {
+		return
+	}
+	w, err := strutil.ParseUintBytes(v[:pipei], 10, 16)
+	if err != nil {
+		return
+	}
+	h, err := strutil.ParseUintBytes(v[pipei+1:], 10, 16)
+	if err != nil {
+		return
+	}
+	vi.Width = uint16(w)
+	vi.Height = uint16(h)
+	return vi, true
+}
+
+func (x *Index) GetVideoInfo(ctx context.Context, fileRef blob.Ref) (camtypes.VideoInfo, error) {
+	if x.corpus != nil {
+		return x.corpus.getVideoInfo(fileRef)
+	}
+	fi, err := x.GetFileInfo(ctx, fileRef)
+	if err != nil {
+		return camtypes.VideoInfo{}, err
+	}
+	key := keyVideo.Key(fi.WholeRef.String())
+	v, err := x.s.Get(key)
+	if err == sorted.ErrNotFound {
+		err = os.ErrNotExist
+	}
+	if err != nil {
+		return camtypes.VideoInfo{}, err
+	}
+	vi, ok := kvVideoInfo([]byte(v))
+	if !ok {
+		return camtypes.VideoInfo{}, fmt.Errorf("index: bogus video key %q = %q", key, v)
+	}
+	return vi, nil
+}
+
 func (x *Index) GetMediaTags(ctx context.Context, fileRef blob.Ref) (tags map[string]string, err error) {
 	if x.corpus != nil {
 		return x.corpus.GetMediaTags(ctx, fileRef)

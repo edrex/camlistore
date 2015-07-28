@@ -45,6 +45,8 @@ import (
 	"camlistore.org/pkg/server/app"
 	"camlistore.org/pkg/sorted"
 	"camlistore.org/pkg/types/camtypes"
+	"camlistore.org/pkg/video/ffmpeg"
+	"camlistore.org/pkg/video/thumbnail"
 	uistatic "camlistore.org/server/camlistored/ui"
 	closurestatic "camlistore.org/server/camlistored/ui/closure"
 	"code.google.com/p/rsc/qr"
@@ -88,8 +90,9 @@ type UIHandler struct {
 	Cache blobserver.Storage // or nil
 
 	// Limit peak RAM used by concurrent image thumbnail calls.
-	resizeSem *syncutil.Sem
-	thumbMeta *ThumbMeta // optional thumbnail key->blob.Ref cache
+	resizeSem      *syncutil.Sem
+	thumbMeta      *ThumbMeta         // optional thumbnail key->blob.Ref cache
+	videoThumbnail *thumbnail.Service // to generate thumbnails from videos. optional.
 
 	// sourceRoot optionally specifies the path to root of Camlistore's
 	// source. If empty, the UI files must be compiled in to the
@@ -119,6 +122,33 @@ func newKVOrNil(conf jsonconfig.Obj) (sorted.KeyValue, error) {
 	return sorted.NewKeyValue(conf)
 }
 
+type videoThumbnailConfMap jsonconfig.Obj
+
+// toStruct allow us to have a properly annotated serverconfig.VideoThumbnail
+// type, and to avoid having an exported func in thumbnail package that would have
+// to take a jsonconfig.Obj. Because jsonconfig.Objs are ugly, harder to type
+// constrain, and harder to document.
+func (m videoThumbnailConfMap) toStruct() (*thumbnail.Config, error) {
+	obj := jsonconfig.Obj(m)
+	command := obj.OptionalList("command")
+	var timeOut time.Duration
+	timeout := obj.OptionalInt("timeout", 0)
+	// 0 means default (2s), <0 means no timeout.
+	if timeout > 0 {
+		timeOut = time.Duration(timeout) * time.Millisecond
+	}
+	maxProcs := obj.OptionalInt("maxProcs", 0)
+	err := obj.Validate()
+	if err != nil {
+		return nil, err
+	}
+	return &thumbnail.Config{
+		Command:  command,
+		Timeout:  timeOut,
+		MaxProcs: maxProcs,
+	}, nil
+}
+
 func uiFromConfig(ld blobserver.Loader, conf jsonconfig.Obj) (h http.Handler, err error) {
 	ui := &UIHandler{
 		prefix:     ld.MyPrefix(),
@@ -128,6 +158,7 @@ func uiFromConfig(ld blobserver.Loader, conf jsonconfig.Obj) (h http.Handler, er
 	}
 	cachePrefix := conf.OptionalString("cache", "")
 	scaledImageConf := conf.OptionalObject("scaledImage")
+	vtConfMap := conf.OptionalObject("videoThumbnail")
 	if err = conf.Validate(); err != nil {
 		return
 	}
@@ -222,6 +253,19 @@ func uiFromConfig(ld blobserver.Loader, conf jsonconfig.Obj) (h http.Handler, er
 	} else {
 		return nil, errors.New("failed to find the 'root' handler")
 	}
+
+	var vth *thumbnail.Service
+	if vtConfMap != nil {
+		vtConf, err := videoThumbnailConfMap(vtConfMap).toStruct()
+		if err != nil {
+			return nil, err
+		}
+		vth, err = thumbnail.NewService(vtConf)
+		if err != nil && err != ffmpeg.ErrFFmpegNotFound {
+			return nil, err
+		}
+	}
+	ui.videoThumbnail = vth
 
 	return ui, nil
 }
@@ -558,13 +602,14 @@ func (ui *UIHandler) serveThumbnail(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	th := &ImageHandler{
-		Fetcher:   ui.root.Storage,
-		Cache:     ui.Cache,
-		MaxWidth:  width,
-		MaxHeight: height,
-		ThumbMeta: ui.thumbMeta,
-		ResizeSem: ui.resizeSem,
-		Search:    ui.search,
+		Fetcher:        ui.root.Storage,
+		Cache:          ui.Cache,
+		MaxWidth:       width,
+		MaxHeight:      height,
+		ThumbMeta:      ui.thumbMeta,
+		ResizeSem:      ui.resizeSem,
+		Search:         ui.search,
+		VideoThumbnail: ui.videoThumbnail,
 	}
 	th.ServeHTTP(rw, req, blobref)
 }
