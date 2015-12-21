@@ -131,6 +131,8 @@ func (b *lowBuilder) searchOwner() (br blob.Ref, err error) {
 	return blob.SHA1FromString(armoredPublicKey), nil
 }
 
+// TODO(mpl): maybe refactor common parts of publisher and scancab
+
 func (b *lowBuilder) addPublishedConfig(tlsO *tlsOpts) error {
 	published := b.high.Publish
 	for k, v := range published {
@@ -157,20 +159,61 @@ func (b *lowBuilder) addPublishedConfig(tlsO *tlsOpts) error {
 				appConfig["httpsKey"] = tlsO.httpsKey
 			}
 		}
-		a := args{
-			"program":   v.Program,
-			"appConfig": appConfig,
-		}
-		if v.BaseURL != "" {
-			a["baseURL"] = v.BaseURL
-		}
 		program := "publisher"
 		if v.Program != "" {
 			program = v.Program
 		}
-		a["program"] = program
+		a := args{
+			"program":    program,
+			"listen":     v.Listen,
+			"backendURL": v.BackendURL,
+			"appConfig":  appConfig,
+		}
 		b.addPrefix(k, "app", a)
 	}
+	return nil
+}
+
+func (b *lowBuilder) addScanCabConfig(tlsO *tlsOpts) error {
+	if b.high.ScanCab == nil {
+		return nil
+	}
+	scancab := b.high.ScanCab
+	if scancab.Prefix == "" {
+		return errors.New("Missing \"prefix\" key in configuration for scanning cabinet.")
+	}
+
+	program := "scanningcabinet"
+	if scancab.Program != "" {
+		program = scancab.Program
+	}
+
+	auth := scancab.Auth
+	if auth == "" {
+		auth = b.high.Auth
+	}
+	appConfig := map[string]interface{}{
+		"auth": auth,
+	}
+	if scancab.HTTPSCert != "" && scancab.HTTPSKey != "" {
+		// user can specify these directly in the publish section
+		appConfig["httpsCert"] = scancab.HTTPSCert
+		appConfig["httpsKey"] = scancab.HTTPSKey
+	} else {
+		// default to Camlistore parameters, if any
+		if tlsO != nil {
+			appConfig["httpsCert"] = tlsO.httpsCert
+			appConfig["httpsKey"] = tlsO.httpsKey
+		}
+	}
+
+	a := args{
+		"program":    program,
+		"listen":     scancab.Listen,
+		"backendURL": scancab.BackendURL,
+		"appConfig":  appConfig,
+	}
+	b.addPrefix(scancab.Prefix, "app", a)
 	return nil
 }
 
@@ -868,6 +911,24 @@ func (b *lowBuilder) build() (*Config, error) {
 		}
 		if err := b.addPublishedConfig(tlsO); err != nil {
 			return nil, fmt.Errorf("Could not generate config for published: %v", err)
+		}
+	}
+
+	if conf.ScanCab != nil {
+		if !b.runIndex() {
+			return nil, fmt.Errorf("scanning cabinet requires an index")
+		}
+		var tlsO *tlsOpts
+		httpsCert, ok1 := low["httpsCert"].(string)
+		httpsKey, ok2 := low["httpsKey"].(string)
+		if ok1 && ok2 {
+			tlsO = &tlsOpts{
+				httpsCert: httpsCert,
+				httpsKey:  httpsKey,
+			}
+		}
+		if err := b.addScanCabConfig(tlsO); err != nil {
+			return nil, fmt.Errorf("Could not generate config for scanning cabinet: %v", err)
 		}
 	}
 

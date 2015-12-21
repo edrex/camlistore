@@ -80,10 +80,42 @@ type Config struct {
 	ReplicateTo []interface{} `json:"replicateTo,omitempty"` // NOOP for now.
 	// Publish maps a URL prefix path used as a root for published paths (a.k.a. a camliRoot path), to the configuration of the publish handler that serves all the published paths under this root.
 	Publish map[string]*Publish `json:"publish,omitempty"`
+	ScanCab *ScanCab            `json:"scancab,omitempty"` // Scanning cabinet app configuration.
 
 	// TODO(mpl): map of importers instead?
 	Flickr string `json:"flickr,omitempty"` // flicker importer.
 	Picasa string `json:"picasa,omitempty"` // picasa importer.
+}
+
+// App holds the configuration values that, if not always necessary, are common
+// to all apps and the app handler.
+type App struct {
+	// Prefix is the URL prefix path to the scanning cabinet app handler
+	// in Camlistore,for the concerned app.
+	// It should start and end with a slash.
+	Prefix string `json:"prefix"`
+
+	// BackendURL is the URL of the application's process, always ending in a
+	// trailing slash. It is the URL that the app handler will proxy to when
+	// getting requests for the concerned app.
+	// It optionally defines CAMLI_APP_BACKEND_URL, which is otherwise
+	// derived from the Camlistore server's base URL, and Listen's port, or a
+	// random port.
+	BackendURL string `json:"baseURL,omitempty"`
+
+	// Listen is the address (of the form host|ip:port) on which the app
+	// will listen on.
+	// If optionally defines CAMLI_APP_LISTEN, which is otherwise derived
+	// from BackendURL or the Camlistore server's base URL host and a random
+	// port.
+	Listen string `json:"listen,omitempty"`
+
+	// Auth is the authentication scheme and values (ex: userpass:foo:bar).
+	// It defaults to the server config auth.
+	Auth string `json:"auth"`
+
+	HTTPSCert string `json:"httpsCert,omitempty"` // path to the HTTPS certificate file.
+	HTTPSKey  string `json:"httpsKey,omitempty"`  // path to the HTTPS key file.
 }
 
 // Publish holds the server configuration values specific to a publisher, i.e. to a publish prefix.
@@ -92,13 +124,12 @@ type Publish struct {
 	// Defaults to "publisher".
 	Program string `json:"program"`
 
+	*App // Common apps and app handler configuration.
+
 	// CamliRoot value that defines our root permanode for this
 	// publisher. The root permanode is used as the root for all the
 	// paths served by this publisher.
 	CamliRoot string `json:"camliRoot"`
-
-	// Base URL the app will run at.
-	BaseURL string `json:"baseURL,omitempty"`
 
 	// GoTemplate is the name of the Go template file used by this
 	// publisher to represent the data. This file should live in
@@ -109,7 +140,14 @@ type Publish struct {
 	// caching blobserver (for images). No caching if empty.
 	// An example value is Config.BlobPath + "/cache".
 	CacheRoot string `json:"cacheRoot,omitempty"`
+}
 
-	HTTPSCert string `json:"httpsCert,omitempty"` // path to the HTTPS certificate file.
-	HTTPSKey  string `json:"httpsKey,omitempty"`  // path to the HTTPS key file.
+// ScanCab holds the server configuration values specific to a scanning cabinet app
+type ScanCab struct {
+	// Program is the server app program to run as the scanning cabinet.
+	// Defaults to "scanningcabinet".
+	Program string `json:"program"`
+
+	// App is for the common apps and app handler configuration.
+	*App
 }
