@@ -130,7 +130,7 @@ func uploadFile(filename string) error {
 	}
 	req.Header.Set("Content-Type", bw.FormDataContentType())
 	am.AddAuthHeader(req)
-	resp, err := (&http.Client{}).Do(req)
+	_, err = (&http.Client{}).Do(req)
 	if err != nil {
 		return err
 	}
