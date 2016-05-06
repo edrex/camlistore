@@ -335,7 +335,7 @@ func Index(t *testing.T, initIdx func() *index.Index) {
 	}
 
 	// Upload some files.
-	var jpegFileRef, exifFileRef, mediaFileRef, mediaWholeRef blob.Ref
+	var jpegFileRef, exifFileRef, exifGPSOutOfBoundsWholeRef, mediaFileRef, mediaWholeRef blob.Ref
 	{
 		camliRootPath, err := osutil.GoPackagePath("camlistore.org")
 		if err != nil {
@@ -352,6 +352,7 @@ func Index(t *testing.T, initIdx func() *index.Index) {
 		}
 		jpegFileRef, _ = uploadFile("dude.jpg", noTime)
 		exifFileRef, _ = uploadFile("dude-exif.jpg", time.Unix(1361248796, 0))
+		_, exifGPSOutOfBoundsWholeRef = uploadFile("exif-GPS-OOB.jpg", time.Unix(1361248796, 0))
 		mediaFileRef, mediaWholeRef = uploadFile("0s.mp3", noTime)
 	}
 
@@ -381,6 +382,12 @@ func Index(t *testing.T, initIdx func() *index.Index) {
 	key = "filetimes|" + exifFileRef.String()
 	if g, e := id.Get(key), "2013-02-18T01%3A11%3A20Z%2C2013-02-19T04%3A39%3A56Z"; g != e {
 		t.Errorf("EXIF dude-exif.jpg key %q = %q; want %q", key, g, e)
+	}
+
+	// Check that indexer ignores exif lat/fields that are out of bounds.
+	key = "exifgps|" + exifGPSOutOfBoundsWholeRef.String()
+	if g, e := id.Get(key), ""; g != e {
+		t.Errorf("EXIF exif-GPS-OOB.jpg key %q = %q; want %q", key, g, e)
 	}
 
 	key = "have:" + pn.String()
