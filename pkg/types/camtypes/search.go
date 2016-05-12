@@ -253,3 +253,17 @@ type FileSearchResponse struct {
 
 	Files []blob.Ref `json:"files"` // Refs of the result files. Never nil.
 }
+
+// LocationInfo describes a file or permanode that has a location.
+type LocationInfo struct {
+	// Lat and Long represent the point location of this blob,
+	// such as the place where a photo was taken.
+	Lat  float64 `json:"lat"`
+	Long float64 `json:"long"`
+
+	// TODO(tajtiattila): decide how to represent blobs with
+	// no single point location such as a track file once we index them,
+	// perhaps with a N/S/E/W boundary. Note that a single point location
+	// is still useful for these, to represent the starting point of a
+	// track log or the main entrance of an area or building.
+}

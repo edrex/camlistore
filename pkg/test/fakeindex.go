@@ -170,6 +170,11 @@ func (fi *FakeIndex) GetMediaTags(ctx context.Context, fileRef blob.Ref) (tags m
 	panic("NOIMPL")
 }
 
+func (fi *FakeIndex) GetLocationInfo(ctx context.Context, fileRef blob.Ref) (camtypes.LocationInfo, error) {
+	// implementation needed for permanode camliContent lookup
+	return camtypes.LocationInfo{}, os.ErrNotExist
+}
+
 func (fi *FakeIndex) GetDirMembers(dir blob.Ref, dest chan<- blob.Ref, limit int) error {
 	panic("NOIMPL")
 }

@@ -25,12 +25,14 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/httputil"
+	"camlistore.org/pkg/schema/nodeattr"
 	"camlistore.org/pkg/types/camtypes"
 	"go4.org/syncutil"
 	"go4.org/types"
@@ -240,6 +242,10 @@ type DescribedBlob struct {
 
 	// if camliType "directory"
 	DirChildren []blob.Ref `json:"dirChildren,omitempty"`
+
+	// if camliType "file" and has location
+	// or camliType "permanode" and ContentRef has location
+	Location *camtypes.LocationInfo `json:"location,omitempty"`
 
 	// Stub is set if this is not loaded, but referenced.
 	Stub bool `json:"-"`
@@ -484,6 +490,18 @@ func (dp *DescribedPermanode) IsContainer() bool {
 	return false
 }
 
+func (dp *DescribedPermanode) attrLatLong() (lat, long float64, ok bool) {
+	lat, err := strconv.ParseFloat(dp.Attr.Get(nodeattr.Latitude), 64)
+	if err != nil {
+		return
+	}
+	long, err = strconv.ParseFloat(dp.Attr.Get(nodeattr.Longitude), 64)
+	if err != nil {
+		return
+	}
+	return lat, long, true
+}
+
 // NewDescribeRequest returns a new DescribeRequest holding the state
 // of blobs and their summarized descriptions.  Use DescribeBlob
 // one or more times before calling Result.
@@ -719,6 +737,15 @@ func (dr *DescribeRequest) describeReally(ctx context.Context, br blob.Ref, dept
 	case "permanode":
 		des.Permanode = new(DescribedPermanode)
 		dr.populatePermanodeFields(ctx, des.Permanode, br, dr.sh.owner, depth)
+		if lat, long, ok := des.Permanode.attrLatLong(); ok {
+			des.Location = &camtypes.LocationInfo{Lat: lat, Long: long}
+		} else {
+			if cbr, ok := des.ContentRef(); ok {
+				if locationInfo, err := dr.sh.index.GetLocationInfo(ctx, cbr); err == nil {
+					des.Location = &locationInfo
+				}
+			}
+		}
 	case "file":
 		fi, err := dr.sh.index.GetFileInfo(ctx, br)
 		if err != nil {
@@ -742,6 +769,9 @@ func (dr *DescribeRequest) describeReally(ctx context.Context, br blob.Ref, dept
 		}
 		if mediaTags, err := dr.sh.index.GetMediaTags(ctx, br); err == nil {
 			des.MediaTags = mediaTags
+		}
+		if locationInfo, err := dr.sh.index.GetLocationInfo(ctx, br); err == nil {
+			des.Location = &locationInfo
 		}
 	case "directory":
 		var g syncutil.Group
@@ -831,7 +861,6 @@ claimLoop:
 		}
 	}
 }
-
 func (dr *DescribeRequest) getDirMembers(ctx context.Context, br blob.Ref, depth int) ([]blob.Ref, error) {
 	limit := dr.maxDirChildren()
 	ch := make(chan blob.Ref)
