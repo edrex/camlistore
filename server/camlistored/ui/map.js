@@ -34,12 +34,15 @@ cam.Map = React.createClass({
     });
   },
   componentDidMount: function() {
+    // todo: this should be on set props
     var markers = L.featureGroup(this.props.markers.map(function(m){
-      return L.marker(m.point, {
-        icon: L.icon({
+      var markerOpts = {};
+      if (m.thumb) {
+        markerOpts.icon = L.icon({
           iconUrl: m.thumb.getSrc(this.props.thumbSize)
         })
-      })
+      }
+      return L.marker(m.point, markerOpts);
     }, this));
 
     // instantiate the Leaflet map object

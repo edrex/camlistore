@@ -39,8 +39,12 @@ cam.LocationDetail = React.createClass({
         this.props.resolvedMeta.location.lat,
         this.props.resolvedMeta.location.long
       ],
-      thumb: cam.Thumber.fromImageMeta(this.props.resolvedMeta)
     };
+    // todo: maybe this should be updated in response to changes
+    if (this.props.resolvedMeta.image) {
+      marker.thumb = cam.Thumber.fromImageMeta(this.props.resolvedMeta)
+    }
+
     return cam.Map({
       markers:[marker],
       width: this.props.width,
