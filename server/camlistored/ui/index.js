@@ -45,6 +45,7 @@ goog.require('cam.DetailView');
 goog.require('cam.Dialog');
 goog.require('cam.DirectoryDetail');
 goog.require('cam.Header');
+goog.require('cam.LocationDetail');
 goog.require('cam.Navigator');
 goog.require('cam.PermanodeDetail');
 goog.require('cam.permanodeUtils');
@@ -209,6 +210,7 @@ cam.IndexPage = React.createClass({
 
 		var specificAspects = [
 			cam.ImageDetail.getAspect,
+			cam.LocationDetail.getAspect,
 			// TODO(mpl): think about whether DirectoryDetail should stay a specificAspect
 			cam.DirectoryDetail.getAspect.bind(null, this.baseURL_, this.props.serverConnection),
 		].map(getAspect).filter(goog.functions.identity);

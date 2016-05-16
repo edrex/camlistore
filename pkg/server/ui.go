@@ -31,6 +31,7 @@ import (
 
 	fontawesomestatic "embed/fontawesome"
 	glitchstatic "embed/glitch"
+	leafletstatic "embed/leaflet"
 	lessstatic "embed/less"
 	reactstatic "embed/react"
 
@@ -65,6 +66,7 @@ var (
 	thumbnailPattern   = regexp.MustCompile(`^thumbnail/([^/]+)(/.*)?$`)
 	treePattern        = regexp.MustCompile(`^tree/([^/]+)(/.*)?$`)
 	closurePattern     = regexp.MustCompile(`^closure/(([^/]+)(/.*)?)$`)
+	leafletPattern     = regexp.MustCompile(`^leaflet/(.+)$`)
 	lessPattern        = regexp.MustCompile(`^less/(.+)$`)
 	reactPattern       = regexp.MustCompile(`^react/(.+)$`)
 	fontawesomePattern = regexp.MustCompile(`^fontawesome/(.+)$`)
@@ -100,6 +102,7 @@ type UIHandler struct {
 	uiDir string // if sourceRoot != "", this is sourceRoot+"/server/camlistored/ui"
 
 	closureHandler         http.Handler
+	fileLeafletHandler     http.Handler
 	fileLessHandler        http.Handler
 	fileReactHandler       http.Handler
 	fileFontawesomeHandler http.Handler
@@ -194,6 +197,10 @@ func uiFromConfig(ld blobserver.Loader, conf jsonconfig.Obj) (h http.Handler, er
 	}
 
 	if ui.sourceRoot != "" {
+		ui.fileLeafletHandler, err = makeFileServer(ui.sourceRoot, filepath.Join(vendorEmbed, "leaflet"), "leaflet.js")
+		if err != nil {
+			return nil, fmt.Errorf("Could not make leaflet handler: %s", err)
+		}
 		ui.fileReactHandler, err = makeFileServer(ui.sourceRoot, filepath.Join(vendorEmbed, "react"), "react.js")
 		if err != nil {
 			return nil, fmt.Errorf("Could not make react handler: %s", err)
@@ -424,6 +431,8 @@ func (ui *UIHandler) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		ui.serveQR(rw, req)
 	case getSuffixMatches(req, closurePattern):
 		ui.serveClosure(rw, req)
+	case getSuffixMatches(req, leafletPattern):
+		ui.serveFromDiskOrStatic(rw, req, leafletPattern, ui.fileLeafletHandler, leafletstatic.Files)
 	case getSuffixMatches(req, lessPattern):
 		ui.serveFromDiskOrStatic(rw, req, lessPattern, ui.fileLessHandler, lessstatic.Files)
 	case getSuffixMatches(req, reactPattern):
