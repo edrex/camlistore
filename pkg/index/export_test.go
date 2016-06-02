@@ -123,3 +123,9 @@ func (x *Index) Exp_FixMissingWholeRef(fetcher blob.Fetcher) (err error) {
 }
 
 var Exp_ErrMissingWholeRef = errMissingWholeRef
+
+func (x *Index) Exp_FinalizeInit() error {
+	return x.finalizeInit()
+}
+
+var Exp_ErrNoVidThumbnail = errNoVidThumbnail
